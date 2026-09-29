@@ -1,0 +1,35 @@
+# Corre el bot en modo PAPER (dinero simulado, precios reales) cada 4 horas en los
+# servidores de GitHub, guarda el estado y publica el panel en paper/index.html.
+name: Paper trading
+
+on:
+  schedule:
+    - cron: "7 */4 * * *"   # 7 minutos después de cada cierre de vela de 4h
+  workflow_dispatch: {}      # botón "Run workflow" para correrlo a mano
+
+permissions:
+  contents: write
+
+concurrency:
+  group: paper-trading
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Ejecutar una vuelta del bot
+        run: python -m bot paper --state paper/state.json --dashboard paper/index.html
+      - name: Guardar estado y panel
+        run: |
+          git config user.name "trading-bot"
+          git config user.email "trading-bot@users.noreply.github.com"
+          git add paper/
+          git diff --cached --quiet || git commit -m "paper: $(date -u +'%Y-%m-%d %H:%M') UTC"
+          git pull --rebase -q && git push

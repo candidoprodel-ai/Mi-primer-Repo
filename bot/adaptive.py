@@ -7,14 +7,14 @@ import math
 
 import pandas as pd
 
-from .strategies import STRATEGIES
+from .strategies import ENSEMBLE, STRATEGIES
 
 
 class Ensemble:
     def __init__(self, eta: float, share: float, weights: dict | None = None):
         self.eta = eta
         self.share = share
-        names = list(STRATEGIES)
+        names = list(ENSEMBLE)
         self.weights = {n: 1 / len(names) for n in names}
         if weights:
             self.weights.update({k: v for k, v in weights.items() if k in self.weights})
@@ -56,7 +56,8 @@ def optimize(df: pd.DataFrame, current: dict, cost: float, margin: float) -> dic
     la historia reciente. Solo cambia si la mejora es clara (evita sobreajuste y vaivenes)."""
     new = {}
     close = df["close"]
-    for name, (fn, grid) in STRATEGIES.items():
+    for name in ENSEMBLE:
+        fn, grid = STRATEGIES[name]
         cur = current.get(name, grid[0])
         if len(grid) <= 1:
             new[name] = cur
@@ -69,3 +70,10 @@ def optimize(df: pd.DataFrame, current: dict, cost: float, margin: float) -> dic
                 best, best_score = p, score
         new[name] = dict(best) if best_score > cur_score + margin else cur
     return new
+
+
+def sharpe(r, bars_per_year: int) -> float:
+    sd = r.std()
+    if not sd or len(r) < 2 or math.isnan(sd):
+        return 0.0
+    return float(r.mean() / sd * math.sqrt(bars_per_year))

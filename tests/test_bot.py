@@ -76,3 +76,31 @@ def test_event_timestamps_are_real_dates():
     eng = Engine(Config(), PaperBroker(1000, 0.001, 0.0005))
     eng.process(df)
     assert eng.last_ts == int(df.index[-1].timestamp() * 1000)
+
+
+def test_tournament_picks_strategies_and_logs_switches():
+    df = data.synthetic(4000, seed=5)
+    cfg = Config(interval="1h", select_window_days=60)
+    eng = Engine(cfg, PaperBroker(1000, cfg.fee, cfg.slippage))
+    eng.process(df)
+    assert eng.switches and eng.ranking
+    assert len(eng.selected) <= cfg.select_top
+    assert all(r["estrategia"] for r in eng.ranking)
+
+
+def test_paper_flow_with_dashboard(tmp_path, monkeypatch):
+    from bot import __main__ as cli
+    full = data.synthetic(3000, seed=6)
+    n = {"bars": 2500}
+    monkeypatch.setattr(data, "bundled", lambda s, i: None)
+    monkeypatch.setattr(data, "fetch_recent", lambda s, i, bars=1000: (full.iloc[: n["bars"]], "test"))
+    state, dash = str(tmp_path / "state.json"), str(tmp_path / "index.html")
+    cli.main(["paper", "--interval", "1h", "--state", state, "--dashboard", dash])
+    st = json.loads(open(state).read())
+    assert st["broker"]["cash"] == 1000 and st["selected"] is not None  # arranca con plata intacta
+    n["bars"] = 3000  # llegan 500 velas nuevas
+    cli.main(["paper", "--state", state, "--dashboard", dash])
+    st = json.loads(open(state).read())
+    assert len(st["equity"]) >= 500
+    html = open(dash, encoding="utf-8").read()
+    assert "__DATA__" not in html and '"mode": "paper"' in html

@@ -1,42 +1,63 @@
-# Bot de trading adaptativo
+# Bot de trading adaptativo — BTC
 
-Bot de trading **spot, solo compras (sin apalancamiento)** que aprende a medida que pasan las velas.
+Bot de trading **spot, solo compras, sin apalancamiento**, que en cada momento usa las
+estrategias que mejor vienen funcionando y cambia cuando dejan de funcionar.
 
-> ⚠️ **Ningún bot garantiza ganancias.** Usalo primero en `paper` (dinero simulado) durante semanas.
-> Si en paper no le gana a *buy & hold* después de costos, no tiene sentido ponerle plata real.
+> ⚠️ Ningún bot garantiza ganancias. Primero **paper trading** (dinero simulado con precios
+> reales) durante semanas/meses. Si no le gana a comprar y mantener, no tiene sentido ponerle plata.
 
-## Cómo "aprende"
-1. **Ensamble de 5 estrategias** (tendencia EMA, momentum, breakout, reversión a la media y *cash*).
-2. **Pesos adaptativos (Hedge)**: después de cada vela, las estrategias que ganaron suben de peso y las que perdieron bajan. Con un "olvido" para adaptarse cuando cambia el mercado. Si todas pierden, *cash* gana peso y el bot se queda afuera.
-3. **Re-optimización walk-forward**: cada semana re-elige los parámetros de cada estrategia usando solo datos pasados, y solo cambia si la mejora es clara (anti-sobreajuste).
-4. **El estado se guarda** (`state.json`), así lo aprendido se conserva entre ejecuciones.
+## Cómo funciona: el torneo
+1. Hay **20 variantes** de estrategias: cruces de medias (EMA), momentum, rupturas (breakout),
+   filtro de media (SMA), MACD, reversión a la media, *mantener* y *efectivo*.
+2. **Cada 7 días** el bot hace un backtest de todas en el último año (con comisiones).
+3. Opera con **las 5 mejores** (Sharpe > 0). Una estrategia activa sale si deja de funcionar
+   (Sharpe ≤ 0) o si aparece otra claramente mejor. Si ninguna funciona, queda en efectivo.
+4. Tamaño de posición según volatilidad y **freno de emergencia**: si el capital cae 25% desde
+   su máximo, cierra todo y pausa 14 días.
+5. Todo queda registrado: cada compra/venta, cada cambio de estrategia y por qué.
 
-## Gestión de riesgo
-- Tamaño de posición según volatilidad (objetivo 40% anual).
-- Trailing stop a 3 ATR + pausa de 6 velas después de un stop.
-- **Freno de emergencia**: si el capital cae 25% desde su máximo, cierra todo y se detiene (`reset-halt` para reactivarlo).
-- Comisiones (0.1%) y slippage incluidos en todo.
+Modo alternativo: `--mode ensamble` (combina estrategias con pesos que aprenden vela a vela).
+
+## Resultados reales (BTC 2017-2026, velas de 4h, datos de Bitstamp)
+| | Bot | Comprar y mantener |
+|---|---|---|
+| Retorno total | +5.022% | +8.163% |
+| Peor caída | **-51%** | -84% |
+| Sharpe | **1.32** | 1.01 |
+
+- 2017-2022 (período donde se eligió la configuración): el bot le gana ajustado por riesgo.
+- **2023-2026 (período "examen")**: el bot ganó bastante menos que mantener (+63% vs +400%).
+- Conclusión honesta: reduce mucho las caídas (2018: -14% vs -73%; 2022: -29% vs -64%) pero se
+  pierde parte de las subidas. Detalle año por año en el panel.
 
 ## Uso
 ```bash
 pip install -r requirements.txt
 
-# 1) Backtest con datos reales de Binance (sin API key)
-python -m bot backtest --symbol BTCUSDT --interval 1h --bars 8000
-
-# 2) Paper trading (una pasada, o --loop para que corra solo cada vela)
-python -m bot paper --symbol BTCUSDT --loop
+python -m bot backtest                  # backtest con los datos reales incluidos → panel_backtest.html
+python -m bot backtest --interval 1d    # otras temporalidades: 1h, 4h, 1d
+python -m bot paper --loop              # paper trading en tu compu, panel en paper/index.html
 python -m bot status
-
-# 3) Real (requiere ser mayor de edad en el exchange, keys SIN permiso de retiro)
-pip install ccxt
-export BOT_API_KEY=... BOT_API_SECRET=...
-python -m bot live --symbol BTCUSDT --confirm --loop
 ```
-Otras opciones: `--csv datos.csv`, `--synthetic`, `--cash 500`, `--out equity.csv`.
+
+### Paper trading 24/7 en GitHub (sin dejar la compu prendida)
+El workflow `.github/workflows/paper-trading.yml` corre el bot cada 4 horas en GitHub Actions,
+guarda el estado en `paper/` y actualiza el panel `paper/index.html`.
+1. Mergeá esta rama a `main` (los cron de GitHub solo corren en la rama principal).
+2. En GitHub → *Actions* → *Paper trading* → *Run workflow* para la primera corrida.
+3. Para ver el panel desde el celu: *Settings → Pages → Deploy from branch → main / root*, y
+   abrí `https://<usuario>.github.io/<repo>/paper/`.
+
+### Dinero real (con autorización de tus padres y cuenta a nombre de un adulto)
+```bash
+pip install ccxt
+export BOT_API_KEY=... BOT_API_SECRET=...   # keys SIN permiso de retiro
+python -m bot live --confirm --loop
+```
 
 ## Tests
 ```bash
 pip install pytest && python -m pytest -q
 ```
-Incluyen: que ninguna señal mire el futuro, contabilidad del broker, que el ensamble aprenda, que guardar/retomar el estado dé el mismo resultado y que el freno de emergencia funcione.
+Verifican que ninguna señal mire el futuro, la contabilidad, el aprendizaje, el torneo, que
+guardar/retomar dé el mismo resultado, el freno de emergencia y el flujo completo de paper.
